@@ -1,0 +1,214 @@
+# depslib dependency file v1.0
+1428748564 source:c:\users\Работа\desktop\prognm 070415 цилиндр\main.cpp
+	<iostream>
+	<fstream>
+	<cmath>
+	<stdlib.h>
+
+1432822684 source:c:\documents and settings\Работа\Рабочий стол\intervals\prognm 050715 прямая задача делаем интервалы\main.cpp
+	<iostream>
+	<fstream>
+	<cmath>
+	<stdlib.h>
+	<cstring>
+
+1436186189 source:d:\Чертежи\intervals\prognm 060715 прямая задача делаем интервалы включаем инт\main.cpp
+	<iostream>
+	<fstream>
+	<cmath>
+	<stdlib.h>
+	<cstring>
+	<fenv.h>
+
+1436351579 source:d:\Чертежи\intervals\prognm 070715 прямая задача считает интервалы ВВЕЛИ ИНТЕРВАЛЫ ПО РО ГРУНТА - РАСХОДИТСЯ находим обр матр\main.cpp
+	<iostream>
+	<fstream>
+	<cmath>
+	<stdlib.h>
+	<cstring>
+	<fenv.h>
+
+1436435834 source:d:\Чертежи\intervals\Копия prognm 090715 прямая задача считает интервалы ВВЕЛИ ИНТЕРВАЛЫ ПО РО ГРУНТА - РАСХОДИТСЯ  не находится обр матр делаем по простому\main.cpp
+	<iostream>
+	<fstream>
+	<cmath>
+	<stdlib.h>
+	<cstring>
+	<fenv.h>
+
+1436459663 source:c:\documents and settings\Работа\Рабочий стол\intervals\prognm 090715 прямая задача делаем интервалы по простому\main.cpp
+	<iostream>
+	<fstream>
+	<cmath>
+	<stdlib.h>
+	<cstring>
+	<fenv.h>
+
+1436503462 source:c:\documents and settings\Работа\Рабочий стол\intervals\prognm 090715 прямая задача делаем интервалы по не совсем простому проблема для itg\main.cpp
+	<iostream>
+	<fstream>
+	<cmath>
+	<stdlib.h>
+	<cstring>
+	<fenv.h>
+
+1436684709 source:c:\documents and settings\Работа\Рабочий стол\intervals\prognm 100715 прямая задача делаем интервалы по не совсем простому проблема для itg\main.cpp
+	<iostream>
+	<fstream>
+	<cmath>
+	<stdlib.h>
+	<cstring>
+	<fenv.h>
+
+1436703549 source:c:\documents and settings\Работа\Рабочий стол\intervals\prognm 120715 прямая задача делаем интервалы по не совсем простому проблема для itg\main.cpp
+	<iostream>
+	<fstream>
+	<cmath>
+	<stdlib.h>
+	<cstring>
+	<fenv.h>
+
+1436776413 source:d:\Чертежи\intervals\prognm 130715 прямая задача делаем интервалы по не совсем простому проблема для itg\main.cpp
+	<iostream>
+	<fstream>
+	<cmath>
+	<stdlib.h>
+	<cstring>
+	<fenv.h>
+
+1437647076 source:d:\Чертежи\intervals\prognm 230715 прямая задача\main.cpp
+	<iostream>
+	<fstream>
+	<cmath>
+	<stdlib.h>
+	<cstring>
+	<fenv.h>
+
+1437661414 source:c:\documents and settings\Работа\Рабочий стол\intervals\prognm 230715 прямая задача\main.cpp
+	<iostream>
+	<fstream>
+	<cmath>
+	<stdlib.h>
+	<cstring>
+	<fenv.h>
+
+1438979570 source:g:\codeblocks\__work\prognm 240715 прямая задача\main.cpp
+	<iostream>
+	<fstream>
+	<cmath>
+	<stdlib.h>
+	<cstring>
+	<fenv.h>
+
+1439209073 source:c:\documents and settings\Работа\Рабочий стол\intervals\prognm 070815 прямая задача\main.cpp
+	<iostream>
+	<fstream>
+	<cmath>
+	<stdlib.h>
+	<cstring>
+	<fenv.h>
+
+1439316453 source:c:\documents and settings\Работа\Рабочий стол\intervals\prognm 090815 прямая задача\main.cpp
+	<iostream>
+	<fstream>
+	<cmath>
+	<stdlib.h>
+	<cstring>
+	<fenv.h>
+
+1439373831 source:c:\users\Работа\desktop\prognm 110815 прямая задача Работает step упрощ глюки  c printresult\main.cpp
+	<iostream>
+	<fstream>
+	<cmath>
+	<stdlib.h>
+	<cstring>
+	<fenv.h>
+
+1439404921 source:c:\documents and settings\Работа\Рабочий стол\intervals\prognm 120815 прямая задача ИСПРАВИЛИ ОШИБКИ\main.cpp
+	<iostream>
+	<fstream>
+	<cmath>
+	<stdlib.h>
+	<cstring>
+	<fenv.h>
+
+1439465247 source:d:\intervals\prognm 120815 прямая задача Работаем по перебору интервалов\main.cpp
+	<iostream>
+	<fstream>
+	<cmath>
+	<stdlib.h>
+	<cstring>
+	<fenv.h>
+
+1439506206 source:d:\intervals\prognm 120815 прямая задача ДЕЛАЕТ ОЦЕНКУ РЕШЕНИЯ СДЕЛАТЬ ПОДСТЧЕТ РАЗМЕРНОСТИ МАССИВОВ\main.cpp
+	<iostream>
+	<fstream>
+	<cmath>
+	<stdlib.h>
+	<cstring>
+	<fenv.h>
+
+1439531394 source:d:\intervals\prognm 120815 прямая задача обнаружен замечат факт все комб перебирать не нужно СДЕЛАТЬ ПОСТЧЕТ РАЗМЕРНОСТИ МАССИВОВ\main.cpp
+	<iostream>
+	<fstream>
+	<cmath>
+	<stdlib.h>
+	<cstring>
+	<fenv.h>
+
+1439793672 source:d:\intervals\prognm 140815 прямая задача Проект lim Правильно находим внешнюю оценку\main.cpp
+	<iostream>
+	<fstream>
+	<cmath>
+	<stdlib.h>
+	<cstring>
+	<fenv.h>
+
+1439814584 source:d:\intervals\prognm 140815 прямая задача Проект lim Готовим расчеты для статьи Сомнения проверить  переделав без сохр all_x\main.cpp
+	<iostream>
+	<fstream>
+	<cmath>
+	<stdlib.h>
+	<cstring>
+	<fenv.h>
+
+1439825823 source:g:\codeblocks\__work\prognm 140815 прямая задача Проект lim Готовим расчеты для статьи Сомнения проверить  переделав без сохр all_x\main.cpp
+	<iostream>
+	<fstream>
+	<cmath>
+	<stdlib.h>
+	<cstring>
+	<fenv.h>
+
+1439832578 source:c:\documents and settings\Работа\Рабочий стол\prognm 150815 прямая задача Проект lim и step совпадают по upr\main.cpp
+	<iostream>
+	<fstream>
+	<cmath>
+	<stdlib.h>
+	<cstring>
+	<fenv.h>
+
+1439835164 source:d:\intervals\prognm 150815 прямая задача Проект lim и step совпадают по upr\main.cpp
+	<iostream>
+	<fstream>
+	<cmath>
+	<stdlib.h>
+	<cstring>
+	<fenv.h>
+
+1439881850 source:d:\intervals\prognm 150815 прямая задача Проект lim и step совпадают по upr пытаемся поймать комб для jtg\main.cpp
+	<iostream>
+	<fstream>
+	<cmath>
+	<stdlib.h>
+	<cstring>
+	<fenv.h>
+
+1439925790 source:d:\intervals\prognm 160815 прямая задача Проект lim step и comb_jtg работают результат в i_ext_sol\main.cpp
+	<iostream>
+	<fstream>
+	<cmath>
+	<stdlib.h>
+	<cstring>
+	<fenv.h>
+

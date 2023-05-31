@@ -1,0 +1,1369 @@
+/// ВВЕСТИ ИНТЕРВАЛЬНЫЕ КОЭФФИЦИЕНТЫ В МАТРИЦУ СИСТЕМЫ:
+/// 1. УДЕЛЬН СОПРОТИВЛЕНИЕ ИЗОЛЯЦИИ ТРУБЫ
+/// 2. УДЕЛЬНОЕ СОПРОТИВЛЕНИЕ ГРУНТА ВВЕЛИ - РЕЗУЛЬТАТ РАСХОДИТСЯ--- 0607
+/// ввели тоько в пэа, надо и в гранус 3 рода
+/// ПОПРОБОВАТЬ МЕТОД ХАНСЕНА
+
+
+///Сделать вывод интервальных результатов как для точечных СДЕЛАНО+++ 0607
+
+/// мысль --- если интервал содержит ноль то при вып-нии арифм операций может быть считать его нулем?
+
+/// РАЗОБРАТЬСЯ ПОЧЕМУ ИСП-СЯ i_ks СТР 48 И 140 - РАБОТАЕТ ТОЛЬКО ДЛЯ ОДНОГО АНОДА??!!!
+/// Для нескольких анодов работает, но почему исп-ся i_ks? Разобраться и записать.
+
+/// ПРЯМАЯ ЗАДАЧА
+/// Обновлены процедуры
+/// LoadDataSKZ, funR2, PrintResult
+/// Эффект падения потенциала не учтен!
+/// разделитель десятичной части - ТОЧКА!!!
+#include <iostream>
+#include <fstream>
+#include <cmath>
+#include <stdlib.h>
+#include <cstring>
+
+using namespace std;
+typedef double MyFloat;
+const int   M=3,              // Кол-во фиктивных источников по трубе
+            N=5,                // Max Кол-во фиктивных источников по аноду
+            NN = 4*M-1;         // Число неизвестных/уравнений системы
+
+const MyFloat pi = 3.141592653589793238462643383279,
+            Rt = 0.557/2.0,     // Внешний радиус трубы
+            Ht = 0.008,         // Толщина стенки трубы
+            Zt = 1.5,           // Глубина залегания трубы
+            Sms = pi*(Rt*Rt - (Rt-Ht)*(Rt-Ht)),
+                                // Площадь металлического сечения трубы
+            Ya = 200.0,         // Расстояние от анода до трубы
+            Za = 2.5,           // Глубина точечного анода под поверхностью земли
+            ro_t = 2.45e-7,     // 2.45e-7 Удельное сопр стали Ом*м
+            ro_g = 35.0,        // Удельное сопр грунта Ом*м
+            disp_ro_g = 0,/// дисперсия, разброс знач уд сопр. грунта в % +/- к принятому выше значению
+            Ct = 5000.0,          // Удельное сопр изоляции трубы Ом*м2
+            Sigma_t = 1/ro_t,   // Удельная электропроводность металла трубы
+            Sigma_g = 1/ro_g,   // Удельная электропроводность грунта
+            disp_sig_g = 50;    /// дисперсия, разброс знач уд элек.пров. грунта в % +/- к принятому выше значению
+
+MyFloat     //I0,               // Ток катодной станции
+            Li,                 // Длина участка трубы соотв-го одному ФИ
+            St,                 // Площадь боковой поверхности, соответствующая одному ФИ
+            L,                  // Длина защищаемого участка трубы
+            varR1,             // Выражение для потенциала цилиндрического электрода в ПЭА
+//            C_t[M],           // удельные электропроводности изоляции трубы Ом*м2
+            FI_t[M][4],         // Координаты центров ФИ по трубе
+            FI_a[N][5],         // Координаты центров ФИ анодов
+            Pi[3],              // коор-ты точек-центров ФИ
+            Pj[3],              // коор-ты точек-центров ФИ
+            A[NN][NN+1],        // Расширенная матрица системы
+//            B[NN],              /// Столбец свободных членов - ИСПОЛЬЗУЕТСЯ??
+            Nv;                 // Норма невязки системы
+//            Pks_x,              /// координата Х точки подключения к трубе катодной станции - ИСПОЛЬЗУЕТСЯ??
+// R_self; /// - ИСПОЛЬЗУЕТСЯ??
+
+int         i_ks;               /// номер ФИ трубы, к центру которого подкючен контакт КС - ИСПОЛЬЗУЕТСЯ??
+
+//////////// ГАУСС ////////////////////
+
+int         num[NN];            // Массив для учета перестановки столбцов
+                                // при выборе главного элемента в методе Гаусса
+MyFloat     Ais[NN][NN+1],      // Массив для хранения исходной копии матрицы системы
+                                // необходим для вычисления невязки
+            X[NN],              // Вектор неизвестных системы
+            Nev[NN];            // Вектор невязки системы
+
+//////////// ГАУСС ////////////////////
+
+/// //////// Импорт данных  /////////////////
+const int D1_0 = 100;   // max кол-во строк данных о точках замера
+const int D2_0 = 6;     // max кол-во столбцов данных для одной точки замера
+int Dt,                 // реальное кол-во строк даных о точках замера
+    Dskz;               // реальное кол-во строк даных о СКЗ (кол-во анодов)
+MyFloat DataSKZ[D1_0][D2_0]; /// массив для импорта данных из файла
+
+/// //////// Импорт данных  /////////////////
+void MatrPrn(MyFloat A[100][100],int M,int N,char fn[])
+{
+    FILE *fp;
+    int i,j;
+    if((fp=fopen(fn, "w")) == NULL)
+    {
+        printf("%s %s \n","Невозможно открыть файл ","tmp_arr.txt");
+    }
+    else
+    {
+        printf("%s %s \n","Возможно открыть файл ","tmp_arr.txt");
+        fprintf(fp,"Расширенная матрица системы;\n");
+
+        for (i=0;i<M;i++)
+        {
+            for (j=0;j<N;j++)
+            {
+                fprintf(fp,"%18.15f%s",A[i][j],"  ");
+            }
+            fprintf(fp,"\n");
+        }
+    }
+}
+
+/// Интервалы begin
+#include <fenv.h>
+typedef MyFloat Ifloat[2];
+Ifloat  i_AB[NN][NN+1],   /// "Рабочая" расширенная матрица, приводимая к треугольной
+        i_ABis[NN][NN+1], /// Исходная расширенная матрица для вычисления невязки
+        i_X[NN],          /// "Рабочий" вектор неизвестниых, компоненты переставляются при выборе главного эл-та
+        i_Xis[NN],        /// Вектор неизвестниых для проверки невязки по исходной м-це
+        i_nev_is[NN],     /// Вектор невязки по исходной м-це
+        i_nev_tr[NN];     /// Вектор невязки по треугольной м-це
+
+MyFloat i_AB_iw[NN][NN+1]; /// Массив, содержащий значения ширины интервалов коэф-в треуг м-цы - для контроля
+
+int i_num[NN];            /// массив для учета перенумерации переменных при выборе главного эл-та
+char i_format[22] = "%s%24.18f%s%24.18f%s"; /// Формат вывода интервальных коэф-в в общий файл
+char i_format1[26] = "%16.8f%s%24.18f%s%24.18f\n"; /// Формат вывода интервальных результатов в отдельные файлы для построения графиков
+
+void i_invA()
+/// НАХОЖДЕНИЕ ОБРАТНОЙ ТОЧЕЧНОЙ МАТРИЦЫ
+{
+    MyFloat AE[NN][2*NN];
+    int i,j,k,gl;
+    MyFloat gll;
+
+
+    for (i=0;i<NN;i++)
+    {
+        for (j=0;j<NN;j++)
+        {
+            AE[i][j] = Ais[i][j];
+            AE[i][j+N] = 0;
+        }
+        AE[i][i+N] = 1;
+    }
+
+//    double gll;
+
+  for (k=0;k<NN;k++)
+  {
+    gl = k;
+   // ищем главный элемент в столбце к
+    for (i=k+1;i<NN;i++)
+    {
+        if (abs(AE[i][k])>abs(AE[gl][k]))
+            {
+                gl=i;
+            }
+    }
+
+    if (gl!=k) // если главный элемент не на диагонали
+    {
+        for (j=0;j<2*NN;j++) // меняем строки местами
+        {
+            gll = A[k][j];
+            A[k][j] = A[gl][j];
+            A[gl][j] = gll;
+        }
+    }
+
+    // получаем 1 для ведущего элемента строки к
+///    gll = A[k][k];
+    for (j=k+1;j<2*NN;j++)
+    {
+        A[k][j] = A[k][j]/A[k][k];
+    }
+    A[k][k] = 1;
+
+   // получаем нули в столбце вне ведущей строки
+    for (i=0;i<NN;i++)
+        if ((i!=k) & (A[i][k]!=0)) // не трогаем сам столбец и те, где уже 0
+        {
+            gll = A[i][k];
+            for (j=i;j<2*NN;j++)
+            {
+                A[i][j] = A[i][j]/gll;
+                A[i][j] = A[i][j] - A[k][j];
+            }
+        }
+}
+}
+
+void i_InitAB()
+/// ВВОДИМ ИНТЕРВАЛЬНУЮ МАТРИЦУ
+/// ПОКА ДЕЛАЕМ НА ОСНОВЕ ГОТОВОЙ ТОЧЕЧНОЙ
+/// ПРАВИЛЬНЕЕ БУДЕТ ВЫЧИСЛЯТЬ КОЭФ-ТЫ ЗАНОВО
+/// С НАПРАВЛЕННЫМИ ОКРУГЛЕНИЯМИ
+{
+    int i,j;
+    for (i=0;i<NN;i++)
+    {
+        for (j=0;j<NN+1;j++)
+        {
+            i_AB[i][j][0] = Ais[i][j];
+            i_AB[i][j][1] = Ais[i][j];
+
+            i_ABis[i][j][0] = Ais[i][j];
+            i_ABis[i][j][1] = Ais[i][j];
+        }
+        i_num[i] = i;
+    }
+/// Вводим интервальность по уд сопр грунта
+    for (i=0;i<M;i++)
+    {
+//        A[i+3*M-1][2*M+i-1]=4*pi*Sigma_g;
+
+        i_AB[i+3*M-1][2*M+i-1][0] = 4*pi/(ro_g*(1+disp_ro_g/100));
+        i_AB[i+3*M-1][2*M+i-1][1] = 4*pi/(ro_g*(1-disp_ro_g/100));;
+
+        i_ABis[i+3*M-1][2*M+i-1][0] = i_AB[i+3*M-1][2*M+i-1][0];
+        i_ABis[i+3*M-1][2*M+i-1][1] = i_AB[i+3*M-1][2*M+i-1][1];
+    }
+}
+
+void i_PrintRes(char* fname)
+{
+    int i,j;
+    FILE *fp;
+    if((fp=fopen(fname, "w")) == NULL)
+    {
+        printf("%s%s\n","File not opened ",fname);
+    }
+    else
+    {
+        printf("%s%s\n","File opened ",fname);
+        fprintf(fp,"%s\n","Исходная матрица системы;");
+        for (i=0;i<NN;i++)
+        {
+            for (j=0;j<NN+1;j++)
+            {
+                fprintf(fp,i_format,"(",i_ABis[i][j][0],";",i_ABis[i][j][1],") ");
+            }
+        fprintf(fp,"\n");
+        }
+
+        fprintf(fp,"%s\n","Решение для исходной системы;");
+
+        for (i=0;i<NN;i++)
+        {
+            fprintf(fp,i_format,"(",i_Xis[i][0],";",i_Xis[i][1],") ");
+        }
+        fprintf(fp,"\n");
+
+        fprintf(fp,"%s\n","Треугольная матрица системы;");
+
+        for (i=0;i<NN;i++)
+        {
+            for (j=0;j<NN+1;j++)
+            {
+                fprintf(fp,i_format,"(",i_AB[i][j][0],";",i_AB[i][j][1],") ");
+            }
+        fprintf(fp,"\n");
+        }
+
+        fprintf(fp,"%s\n","Решение для треугольной системы;");
+
+        for (i=0;i<NN;i++)
+        {
+            fprintf(fp,i_format,"(",i_X[i][0],";",i_X[i][1],") ");
+        }
+        fprintf(fp,"\n");
+
+
+        fprintf(fp,"%s\n","Массив перенумерации неизв системы;");
+
+        for (i=0;i<NN;i++)
+        {
+            fprintf(fp,"%i%s",i_num[i],"  ");
+        }
+        fprintf(fp,"\n");
+
+
+
+        fprintf(fp,"%s\n","Ширина интервалов треугольной матрицы;");
+
+        for (i=0;i<NN;i++)
+        {
+            for (j=0;j<NN+1;j++)
+            {
+                fprintf(fp,"%s%24.18f%s"," (",i_AB_iw[i][j],")");
+            }
+        fprintf(fp,"\n");
+        }
+
+        fprintf(fp,"%s\n","Невязка для исходной системы;");
+
+        for (i=0;i<NN;i++)
+        {
+            fprintf(fp,i_format,"(",i_nev_is[i][0],";",i_nev_is[i][1],") ");
+        }
+        fprintf(fp,"\n");
+
+        fprintf(fp,"%s\n","Невязка для треугольной системы;");
+
+        for (i=0;i<NN;i++)
+        {
+            fprintf(fp,i_format,"(",i_nev_tr[i][0],";",i_nev_tr[i][1],") ");
+        }
+    }
+}
+
+void i_add(Ifloat r,Ifloat a, Ifloat b)
+{
+    r[0] = a[0] + b[0];
+    r[1] = -a[1] - b[1];
+    r[1] = - r[1];
+}
+void i_sub(Ifloat r,Ifloat a, Ifloat b)
+{
+    r[0] = a[0] - b[1];
+    r[1] = - a[1] + b[0];
+    r[1] = - r[1];
+}
+void i_mul(Ifloat r,Ifloat a, Ifloat b)
+{
+    int i;
+    MyFloat i_tl[4],i_tr[4],i_t_min,i_t_max; /// временная переменная,
+    i_tl[0] = a[0] * b[0];
+    i_tl[1] = a[0] * b[1];
+    i_tl[2] = a[1] * b[0];
+    i_tl[3] = a[1] * b[1];
+
+    i_tr[0] = - a[0] * b[0];
+    i_tr[1] = - a[0] * b[1];
+    i_tr[2] = - a[1] * b[0];
+    i_tr[3] = - a[1] * b[1];
+
+    i_tr[0] = - i_tr[0];
+    i_tr[1] = - i_tr[1];
+    i_tr[2] = - i_tr[2];
+    i_tr[3] = - i_tr[3];
+
+    i_t_min = i_tl[0];
+    i_t_max = i_tr[0];
+    for (i=0;i<3;i++)
+    {
+        if (i_tl[i] < i_t_min) i_t_min = i_tl[i];
+        if (i_tr[i] > i_t_max) i_t_max = i_tr[i];
+    }
+    r[0] = i_t_min;
+    r[1] = i_t_max;
+}
+void i_div(Ifloat r,Ifloat a,Ifloat b)
+{
+    int i;
+    MyFloat i_tl[4],i_tr[4],i_t_min,i_t_max; /// временная переменная,
+    i_tl[0] = a[0] / b[0];
+    i_tl[1] = a[0] / b[1];
+    i_tl[2] = a[1] / b[0];
+    i_tl[3] = a[1] / b[1];
+
+    i_tr[0] = - a[0] / b[0];
+    i_tr[1] = - a[0] / b[1];
+    i_tr[2] = - a[1] / b[0];
+    i_tr[3] = - a[1] / b[1];
+
+    i_tr[0] = - i_tr[0];
+    i_tr[1] = - i_tr[1];
+    i_tr[2] = - i_tr[2];
+    i_tr[3] = - i_tr[3];
+
+    i_t_min = i_tl[0];
+    i_t_max = i_tr[0];
+    for (i=0;i<3;i++)
+    {
+        if (i_tl[i] < i_t_min) i_t_min = i_tl[i];
+        if (i_tr[i] > i_t_max) i_t_max = i_tr[i];
+    }
+    r[0] = i_t_min;
+    r[1] = i_t_max;
+}
+
+MyFloat abs_int(Ifloat a)
+{
+    MyFloat abt;
+    abt = abs(a[0]);
+    if (abt < abs(a[1]))
+    {
+        abt = abs(a[1]);
+    }
+    return abt;
+}
+
+bool incl0(Ifloat a)
+{
+    if (a[0]*a[1] <= 0)
+    {
+        return true;
+    }
+    else
+    {
+        return false;
+    }
+}
+
+MyFloat width_int(Ifloat a)
+{
+    return a[1]-a[0];
+}
+
+void i_printResult()
+{
+    FILE *fp;
+//        dirName[] = "\\1111\\",
+char    dirName[9] = "",
+    fileType[9] = ".txt",
+    fileName_Res[9] = "i_Resall",
+    fileName_Itx[9] = "i_Itx",
+    fileName_Itg[9] = "i_Itg",
+    fileName_Utg[9] = "i_Utg",
+    fileName_Utm[9] = "i_Utm",
+    fileName_Upr[9] = "i_Upr",
+    fileName_Jtg[9] = "i_Jtg",
+    curFileName[9] = "";
+    int i,j;
+    Ifloat t;
+//    char filename[100] = __TIME__;
+//    cout<<filename<<endl;
+//    ofstream fout(filename);
+    strcat(curFileName,dirName);
+    strcat(curFileName,fileName_Res);
+    strcat(curFileName,fileType);
+    if((fp=fopen(curFileName, "w")) == NULL)
+    {
+        printf("%s %s \n","File not opened ",curFileName);
+    }
+    else
+    {
+        printf("%s%s\n","File opened ",curFileName);
+        fprintf(fp,"%s\n","Исходная матрица системы;");
+        for (i=0;i<NN;i++)
+        {
+            for (j=0;j<NN+1;j++)
+            {
+                fprintf(fp,i_format,"(",i_ABis[i][j][0],";",i_ABis[i][j][1],") ");
+            }
+        fprintf(fp,"\n");
+        }
+
+        fprintf(fp,"%s\n","Решение для исходной системы;");
+
+        for (i=0;i<NN;i++)
+        {
+            fprintf(fp,i_format,"(",i_Xis[i][0],";",i_Xis[i][1],") ");
+        }
+        fprintf(fp,"\n");
+
+        fprintf(fp,"%s\n","Треугольная матрица системы;");
+
+        for (i=0;i<NN;i++)
+        {
+            for (j=0;j<NN+1;j++)
+            {
+                fprintf(fp,i_format,"(",i_AB[i][j][0],";",i_AB[i][j][1],") ");
+            }
+        fprintf(fp,"\n");
+        }
+
+        fprintf(fp,"%s\n","Решение для треугольной системы;");
+
+        for (i=0;i<NN;i++)
+        {
+            fprintf(fp,i_format,"(",i_X[i][0],";",i_X[i][1],") ");
+        }
+        fprintf(fp,"\n");
+
+        fprintf(fp,"%s\n","Массив перенумерации неизв системы;");
+
+        for (i=0;i<NN;i++)
+        {
+            fprintf(fp,"%i%s",i_num[i],"  ");
+        }
+        fprintf(fp,"\n");
+
+        fprintf(fp,"%s\n","Ширина интервалов треугольной матрицы;");
+
+        for (i=0;i<NN;i++)
+        {
+            for (j=0;j<NN+1;j++)
+            {
+                fprintf(fp,"%s%24.18f%s"," (",i_AB_iw[i][j],")");
+            }
+        fprintf(fp,"\n");
+        }
+
+        fprintf(fp,"%s\n","Невязка для исходной системы;");
+
+        for (i=0;i<NN;i++)
+        {
+            fprintf(fp,i_format,"(",i_nev_is[i][0],";",i_nev_is[i][1],") ");
+        }
+        fprintf(fp,"\n");
+
+        fprintf(fp,"%s\n","Невязка для треугольной системы;");
+
+        for (i=0;i<NN;i++)
+        {
+            fprintf(fp,i_format,"(",i_nev_tr[i][0],";",i_nev_tr[i][1],") ");
+        }
+
+        fprintf(fp,"%\n");
+        fprintf(fp,"Ток вдоль трубы Itx_i;\n");
+
+        for (i=0;i<M-1;i++) fprintf(fp,i_format,"(",i_Xis[i][0],";",i_Xis[i][1],") ");
+        fprintf(fp,"%\n");
+
+        fprintf(fp,"Ток на границе грунт-труба Itg_i, А;\n");
+//    for (i=0;i<M;i++) fprintf(fp,outputFormat,X[M-1+i],";");
+        for (i=0;i<M;i++) fprintf(fp,i_format,"(",i_Xis[M-1+i][0],";",i_Xis[M-1+i][1],") ");
+
+        fprintf(fp,"%\n");
+/*
+    fprintf(fp,"Проверка: Суммарный ток на границе грунт-труба Itg_i;\n");
+    Nv = 0;
+    for (i=0;i<M;i++) Nv = Nv + X[M-1+i];
+    fprintf(fp,outputFormat,Nv);
+    fprintf(fp,"%\n");
+*/
+        fprintf(fp,"Эл. потенциал на границе грунт-туба Utg_i;\n");
+//    for (i=0;i<M;i++) fprintf(fp,outputFormat,X[2*M-1+i],";");
+        for (i=0;i<M;i++) fprintf(fp,i_format,"(",i_Xis[2*M-1+i][0],";",i_Xis[2*M-1+i][1],") ");
+        fprintf(fp,"%\n");
+
+
+        fprintf(fp,"Эл. потенциал металла трубы Utm_i;\n");
+//        for (i=0;i<M;i++) fprintf(fp,outputFormat,X[3*M-1+i],";");
+        for (i=0;i<M;i++) fprintf(fp,i_format,"(",i_Xis[3*M-1+i][0],";",i_Xis[3*M-1+i][1],") ");
+
+        fprintf(fp,"%\n");
+        fprintf(fp,"Защитный потенциал Utg_i-Utm_i;\n");
+//    for (i=0;i<M;i++) fprintf(fp,outputFormat,X[2*M-1+i]-X[3*M-1+i],";");
+///НАДО ВЫЧИСЛЯТЬ ИНТЕРВ РАЗНОСТЬ
+///    Ifloat t;
+        for (i=0;i<M;i++)
+        {
+            i_sub(t,i_Xis[2*M-1+i],i_Xis[3*M-1+i]);
+            fprintf(fp,i_format,"(",t[0],";",t[1],") ");
+        }
+
+        fprintf(fp,"%\n");
+        fclose(fp);
+        }
+
+  //  char outputFormat1[28] = "%24.16f%s%24.16f%s";
+        strcpy(curFileName,"");
+        strcat(curFileName,dirName);
+        strcat(curFileName,"i_Upr");
+        strcat(curFileName,fileType);
+        if((fp=fopen(curFileName, "w")) == NULL)
+        {
+            printf("%s %s \n","Невозможно открыть файл ",curFileName);
+        }
+        else
+        {
+            printf("%s %s \n","Возможно открыть файл ",curFileName);
+//        fprintf(fp,"Величина защитного потенциала;\n");
+            fprintf(fp,"Защитный потенциал Utg_i-Utm_i;\n");
+            for (i=0;i<M;i++)
+            {
+                i_sub(t,i_Xis[2*M-1+i],i_Xis[3*M-1+i]);
+//                fprintf(fp,i_format,"(",t[0],";",t[1],") ");
+                fprintf(fp,i_format1,FI_t[i][0],";",t[0],";",t[1]);
+            }
+            fprintf(fp,"%\n");
+            fclose(fp);
+        }
+
+        strcpy(curFileName,"");
+        strcat(curFileName,dirName);
+        strcat(curFileName,"i_Jtg");
+        strcat(curFileName,fileType);
+        if((fp=fopen(curFileName, "w")) == NULL)
+        {
+            printf("%s %s \n","Невозможно открыть файл ",curFileName);
+        }
+        else
+        {
+            printf("%s%s \n","Возможно открыть файл ",curFileName);
+            fprintf(fp,"Плотность тока на границе грунт-труба, мА/м2;\n");
+
+///        i_format1[] = "%16.8f%s24.18f%s%24.18f\n";
+            for (i=0;i<M;i++) fprintf(fp,i_format1,FI_t[i][0],";",(1000/St)*i_Xis[M-1+i][0],";",(1000/St)*i_Xis[M-1+i][1]);
+//        for (i=0;i<M;i++) fprintf(fp,outputFormat2,FI_t[i][0],";",1000*X[M-1+i]/St,";\n");
+            fprintf(fp,"%\n");
+            fclose(fp);
+        }
+
+}
+
+
+
+
+
+
+
+void i_Gauss()
+{
+    int l,i,j,t,k,max_num;
+    Ifloat Li1,tmp,sum;
+    for (l=0;l<NN;l++)
+{
+/// поиск макс элемента
+    max_num = l;
+    for (k=l+1;k<NN;k++)
+    {
+///  МЫСЛИ О МОДЕРНИЗАЦИИ ВЫБОРА ГЛАВНОГО ЭЛЕМЕНТА С УЧЕТОМ ШИРИНЫ ИНТЕРВАЛА ВЕДУЩЕГО ЭЛЕМЕНТА
+///        cout<<width_int(i_AB[l][max_num])<<endl;
+        if (abs_int(i_AB[l][k]) > abs_int(i_AB[l][max_num])) max_num = k;
+    }
+        if (max_num != l)
+        {
+//            меняем столбцы
+            t = i_num[l];
+            i_num[l] = i_num[max_num];
+            i_num[max_num] = t;
+
+            for (t = 0;t<NN;t++)
+            {
+                tmp[0] = i_AB[t][l][0];
+                tmp[1] = i_AB[t][l][1];
+
+                i_AB[t][l][0] = i_AB[t][max_num][0];
+                i_AB[t][l][1] = i_AB[t][max_num][1];
+
+                i_AB[t][max_num][0] = tmp[0];
+                i_AB[t][max_num][1] = tmp[1];
+            }
+        }
+
+/// поиск макс элемента
+        for (i=l+1;i<NN;i++)
+        {
+            i_div(Li1,i_AB[i][l],i_AB[l][l]);
+
+            for (j=0;j<NN+1;j++)
+            {
+                i_mul(tmp,Li1,i_AB[l][j]);
+                i_sub(i_AB[i][j],i_AB[i][j],tmp);
+            }
+        }
+}
+
+///        AB[NN][NN+1] = AB[NN][NN+1]/AB[NN][NN];
+        i_div(i_X[NN-1],i_AB[NN-1][NN],i_AB[NN-1][NN-1]);
+        for (i=NN-2;i>=0;i--)
+        {
+            sum[0] = 0;
+            sum[1] = 0;
+///            for (j=NN;j=i+1;j--) sum = sum + AB[i][j]*AB[j][NN+1];
+            for (j=NN-1;j>=i;j--)
+            {
+                i_mul(tmp,i_AB[i][j],i_X[j]);
+                i_add(sum,sum,tmp);
+            }
+///            AB[i][NN+1] = (AB[i][NN+1] - sum)/(AB[i][i]);
+            i_sub(tmp,i_AB[i][NN],sum);
+            i_div(i_X[i],tmp,i_AB[i][i]);
+        }
+    for (i=0;i<NN;i++)
+    {
+       i_Xis[i_num[i]][0] = i_X[i][0];
+       i_Xis[i_num[i]][1] = i_X[i][1];
+    }
+
+        /// ВЫЧИСЛЯЕМ ШИРИНУ ИНТЕРВАЛОВ-КОЭФФИЦИЕНТОВ ТРЕУГОЛЬНОЙ МАТРИЦЫ
+    fesetround (FE_UPWARD);
+    for (i=0;i<NN;i++)
+    {
+        for (j=0;j<NN+1;j++)
+        {
+            i_AB_iw[i][j] = width_int(i_AB[i][j]);
+        }
+    }
+    fesetround (FE_DOWNWARD);
+ }
+
+void i_ProvAB()
+{
+    int i,j;
+    Ifloat sum,tmp;
+    for (i=0;i<NN;i++)
+        {
+        sum[0] = 0;
+        sum[1] = 0;
+        for (j=0;j<NN;j++)
+        {
+            i_mul(tmp,i_AB[i][j],i_X[j]);
+            i_add(sum,sum,tmp);
+        }
+        i_sub(i_nev_tr[i],i_AB[i][NN],sum);
+        }
+}
+
+void i_ProvABis()
+{
+    int i,j;
+    Ifloat sum,tmp;
+    for (i=0;i<NN;i++)
+        {
+        sum[0] = 0;
+        sum[1] = 0;
+        for (j=0;j<NN;j++)
+        {
+            i_mul(tmp,i_ABis[i][j],i_Xis[j]);
+            i_add(sum,sum,tmp);
+        }
+        i_sub(i_nev_is[i],i_ABis[i][NN],sum);
+        }
+}
+
+void i_main()
+{
+    int i,j;
+    Ifloat e1,e2,e3,ee;
+    fesetround (FE_DOWNWARD);
+    i_InitAB();
+    i_Gauss();
+    i_ProvAB();
+    i_ProvABis();
+    i_PrintRes("res.txt");
+    i_printResult();
+}
+
+/// Интервалы end
+
+
+MyFloat funR1(MyFloat P_i[3],MyFloat P_j[3])
+{
+    return      1/sqrt((P_i[0]-P_j[0])*(P_i[0]-P_j[0])+(P_i[1]-P_j[1])*
+                (P_i[1]-P_j[1])+(P_i[2]-P_j[2])*(P_i[2]-P_j[2]))
+                +
+                1/sqrt((P_i[0]-P_j[0])*(P_i[0]-P_j[0])+(P_i[1]-P_j[1])*
+                (P_i[1]-P_j[1])+(P_i[2]+P_j[2])*(P_i[2]+P_j[2]));
+}
+
+MyFloat funR2(MyFloat P_i[3],MyFloat P_j[3])
+{
+    return      1/sqrt((P_i[0]+P_j[0])*(P_i[0]+P_j[0])+(P_i[1]-P_j[1])*
+                (P_i[1]-P_j[1])+(P_i[2]-P_j[2])*(P_i[2]-P_j[2]))        /// ФИ зерк от-но x=0
+                +
+                1/sqrt((P_i[0]-(2*L-P_j[0]))*(P_i[0]-(2*L-P_j[0]))+(P_i[1]-P_j[1])*
+                (P_i[1]-P_j[1])+(P_i[2]-P_j[2])*(P_i[2]-P_j[2]))        /// ФИ зерк от-но x=L
+                +
+                 1/sqrt((P_i[0]+P_j[0])*(P_i[0]+P_j[0])+(P_i[1]-P_j[1])*
+                (P_i[1]-P_j[1])+(P_i[2]+P_j[2])*(P_i[2]+P_j[2]))        /// ФИ зерк от-но z=0 x=0
+                +
+                1/sqrt((P_i[0]-(2*L-P_j[0]))*(P_i[0]-(2*L-P_j[0]))+(P_i[1]-P_j[1])*
+                (P_i[1]-P_j[1])+(P_i[2]+P_j[2])*(P_i[2]+P_j[2]));       /// ФИ зерк от-но z=0 x=L
+}
+
+
+
+void Init_FI_t()
+{
+    int i;
+    L = DataSKZ[Dt-1][0]-DataSKZ[0][0] + DataSKZ[1][0]-DataSKZ[0][0]; // Общая длина защищаемого участка трубы
+    cout<<"L= "<<L<<endl;
+    Li = L / M;                         // Длина участка трубы соотв-го одному ФИ
+    St = 2*pi*Rt*Li;                    // Площадь боковой поверхности, соответствующая ФИ
+    cout<<"Li= "<<Li<<endl;
+    varR1 = 2.0*log((sqrt(Rt*Rt+Li*Li)+Li)/Rt)/Li+        // Выражение для потенциала
+            2.0*log((sqrt(4*Zt*Zt+Li*Li)+Li)/(2*Zt))/Li;  // цилиндрического электрода
+    cout<<"varR1 = "<<varR1<<endl;
+    for (i=0;i<M;i++)
+    {
+        FI_t[i][0]=i*Li+(Li/2);
+        FI_t[i][1]=0;
+        FI_t[i][2]=Zt;
+        FI_t[i][3]= Ct;
+        cout<<"Parametri truby  "<<FI_t[i][0]<<"  "<<FI_t[i][1]<<"  "<<FI_t[i][2]<<"  "<<FI_t[i][3]<<endl;
+    }
+   // FI_t[9][3]= Ct/10; /// ЗАДАЕМ ПОВРЕЖДЕНИЕ
+}
+
+void Init_FI_a()
+//void InitKS()
+{
+    int i,j;
+    /// Кол-во точек Dt и СКЗ Dskz посчитано в процедуре LoadDataSKz()
+    j = 0;
+    for (i=0;i<Dt;i++)
+    {
+        if (DataSKZ[i][3] != 0) /// Столбец силы тока содержит не ноль (это СКЗ)
+        {
+//            FI_a[j][0] = DataSKZ[i][0] - DataSKZ[0][0]+0.5*Li;
+            FI_a[j][0] = DataSKZ[i][0] - DataSKZ[0][0]+(DataSKZ[1][0] - DataSKZ[0][0])/2;
+cout<<"FI_a[j][0] = "<<FI_a[j][0]<<endl;
+            FI_a[j][1] = Ya;
+            FI_a[j][2] = Za;
+            FI_a[j][3] = DataSKZ[i][3];         // сила тока СКЗ
+
+cout<<"i = "<<i<<endl;
+cout<<"j = "<<j<<endl;
+cout<<"FI_a[j][3] = "<<FI_a[j][3]<<endl;
+cout<<"DataSKZ[i][3] = "<<DataSKZ[i][3]<<endl;
+
+            FI_a[j][4] = int(FI_a[j][0]/Li);  // номер ФИ, подключенного к КС
+            if (FI_a[j][4] > M-1) i_ks=M-1;
+cout<<"FI_a[j][4] = "<<FI_a[j][4]<<endl;
+            j++;
+        }
+    }
+}
+
+void Init_A()
+{
+    int i,j;
+
+    for (i=0;i<NN;i++)
+        for (j=0;j<NN+1;j++)
+        {
+            A[i][j] = 0;
+        }
+    //Законы Киргофа для ФИ по трубе
+    A[0][0]=-1;         /// коэффициент при Itx_0
+    A[0][M-1]=1;        /// коэффициент при Itg_0
+
+    for (i=1;i<=M-2;i++)
+    {
+        A[i][i-1]=1;    /// коэффициент при Itx_(i-1)
+        A[i][i]=-1;     /// коэффициент при Itx_i
+        A[i][M+i-1]=1;  /// коэффициент при Itg_i
+    }
+    A[M-1][M-2]=1;      /// коэффициент при Itx_(M-1)
+    A[M-1][2*M-2]=1;    /// коэффициент при Itg_M
+    for (i=0;i<Dskz;i++)
+    {
+        cout<<"FI_a[i][3] = "<<FI_a[i][3]<<endl;
+        cout<<"int(FI_a[i][4]) = "<<int(FI_a[i][4])<<endl;
+
+        A[int(FI_a[i][4])][NN] = FI_a[i][3];  /// Интенсивности анодов
+                                              /// в правую часть системы
+
+        cout<<"A[int(FI_a[i][4])][NN] = "<<A[int(FI_a[i][4])][NN]<<endl;
+    }
+
+
+// Граничные условия 3 рода
+    for (i=0;i<M;i++)
+    {
+        A[i+M][M+i-1]=-FI_t[i][3]/St; /// коэффициент при Itg_i Ct/St
+        A[i+M][i+2*M-1]=1;            /// коэффициент при Utg_i
+        A[i+M][i+3*M-1]=-1;           /// коэффициент при Utm_i
+    }
+
+     // Закон Ома между соседними фиктивными источниками
+    for (i=0;i<M-1;i++)
+    {
+        A[i+2*M][i]=ro_t*Li/Sms;    /// коэффициент при Itx_(i) +++!!!
+        A[i+2*M][i+3*M-1]=-1;       /// коэффициент при Itx_(i)
+        A[i+2*M][i+3*M]=1;          /// коэффициент при Itx_(i+1)
+    }
+
+
+    // Выражения для электростатической аналогии
+    for (i=0;i<M;i++)
+        {
+        A[i+3*M-1][2*M+i-1]=4*pi*Sigma_g;   /// коэффициент при Utg_i
+
+        Pi[0] = FI_t[i][0];
+        Pi[1] = FI_t[i][1];
+        Pi[2] = FI_t[i][2];
+
+        for (j=0;j<Dskz;j++)
+        {
+                Pj[0] = FI_a[j][0];
+                Pj[1] = FI_a[j][1];
+                Pj[2] = FI_a[j][2];
+
+                // Вычисляем коэффициент правой части
+                A[i+3*M-1][4*M-1]=A[i+3*M-1][4*M-1]+FI_a[j][3]*(funR1(Pi,Pj)+funR2(Pi,Pj));
+        }
+
+        for (j=0;j<M;j++)
+            {
+                Pj[0] = FI_t[j][0];
+                Pj[1] = FI_t[j][1];
+                Pj[2] = FI_t[j][2];
+
+                /// Вычисляем коэффициент при Itg_i
+                if (i==j)
+                {
+                    A[i+3*M-1][M-1+j] = varR1 + funR2(Pi,Pj);
+                }
+                else
+                {
+                    A[i+3*M-1][M-1+j] = funR1(Pi,Pj) + funR2(Pi,Pj);
+                }
+             }
+         }
+
+    for (i=0;i<NN;i++)
+    {
+        num[i] = i;              // Иходный порядок переменных
+        for (j=0;j<NN+1;j++)
+        {
+            Ais[i][j] = A[i][j]; // Исходная матрица для вычисления невязки
+        }
+    }
+}
+
+//////////// ГАУСС ////////////////////
+//////////// ГАУСС ////////////////////
+
+
+void gl_el(int k)
+{
+    int i,j,gl;
+    MyFloat gll;
+//    double gll;
+    gl = 0;
+
+    // ищем главный элемент в строке к
+    for (i=0;i<NN;i++)
+    {
+        if (abs(A[k][i])>abs(A[k][gl]))
+            {
+                gl=i;
+            }
+    }
+
+    if (gl!=k) // если главный элемент не на диагонали
+    {
+        for (i=0;i<NN;i++) // меняем столбцы местами
+        {
+            gll=A[i][k];
+            A[i][k] = A[i][gl];
+            A[i][gl]=gll;
+        }
+        //фиксируем изменение порядка записи переменных
+        i=num[k];
+        num[k]=num[gl];
+        num[gl]=i;
+    }
+
+    // получаем 1 для ведущего элемента строки к
+    gll = A[k][k];
+    for (i=0;i<NN+1;i++)
+    {
+        A[k][i] = A[k][i]/gll;
+    }
+    // получаем нули в столбце вне ведущей строки
+    for (i=0;i<NN;i++)
+        if ((i!=k) & (A[i][k]!=0)) // не трогаем сам столбец и те, где уже 0
+        {
+            gll = A[i][k];
+            for (j=0;j<NN+1;j++)
+            {
+                A[i][j] = A[i][j]/gll;
+                A[i][j] = A[i][j] - A[k][j];
+            }
+        }
+}
+
+void mygauss()
+{
+    int i,j;
+    MyFloat gll;
+    for (i=0;i<NN;i++)
+    {
+        gl_el(i);
+    }
+/// посмотреть, как выглядит матрица системы BEGIN
+
+    FILE *fp;
+    if((fp=fopen("tmp_arr.txt", "w")) == NULL)
+    {
+        printf("%s %s \n","Невозможно открыть файл ","tmp_arr.txt");
+    }
+    else
+    {
+        printf("%s %s \n","Возможно открыть файл ","tmp_arr.txt");
+        fprintf(fp,"Расширенная матрица системы;\n");
+
+        for (i=0;i<NN;i++)
+        {
+            for (j=0;j<NN+1;j++)
+            {
+                fprintf(fp,"%8.5f%s",A[i][j],"  ");
+            }
+            fprintf(fp,"\n");
+        }
+/*
+        for (i=0;i<NN;i++)
+    {
+        gll = A[i][i];
+        for (j=0;j<NN+1;j++)
+       {
+           A[i][j]=A[i][j] / gll;
+       }
+    }
+*/
+     for (i=0;i<NN;i++)
+     {
+         A[i][NN] = A[i][NN]/A[i][i];
+         A[i][i] = 1;
+     }
+        fprintf(fp,"Расширенная матрица системы;\n");
+        for (i=0;i<NN;i++)
+        {
+            for (j=0;j<NN+1;j++)
+            {
+                fprintf(fp,"%8.5f%s",A[i][j],"  ");
+            }
+            fprintf(fp,"\n");
+        }
+    } //
+/// посмотреть матрицы END
+
+
+
+
+/*        for (i=0;i<NN;i++)
+    {
+        gll = A[i][i];
+        for (j=0;j<NN+1;j++)
+       {
+           A[i][j]=A[i][j] / gll;
+       }
+    }
+*/
+     for (i=0;i<NN;i++)
+     {
+         A[i][NN] = A[i][NN]/A[i][i];
+         A[i][i] = 1;
+     }
+     for (i=0;i<NN;i++)
+    {
+        X[num[i]] = A[i][NN];
+    }
+     for (i=0;i<NN;i++)
+        {
+        Nev[i] = - Ais[i][NN];
+        for (j=0;j<NN;j++)
+            {
+                Nev[i] = Nev[i] + Ais[i][j]*X[j];
+            }
+        }
+    Nv = 0;
+    for (i=0;i<NN;i++)
+    {
+       Nv = Nv + abs(Nev[i]);
+    }
+}
+
+void printResult()
+{
+    FILE *fp;
+    char outputFormat[12] = "%24.18f%s",
+//        dirName[] = "\\1111\\",
+    dirName[9] = "",
+    fileType[9] = ".txt",
+    fileName_Res[9] = "Resall",
+    fileName_Itx[9] = "Itx",
+    fileName_Itg[9] = "Itg",
+    fileName_Utg[9] = "Utg",
+    fileName_Utm[9] = "Utm",
+    fileName_Upr[9] = "Upr",
+    fileName_Jtg[9] = "Jtg",
+    curFileName[9] = "";
+    int i,j;
+//    char filename[100] = __TIME__;
+//    cout<<filename<<endl;
+//    ofstream fout(filename);
+    strcat(curFileName,dirName);
+    strcat(curFileName,fileName_Res);
+    strcat(curFileName,fileType);
+    if((fp=fopen(curFileName, "w")) == NULL)
+    {
+        printf("%s %s \n","Невозможно открыть файл ",curFileName);
+    }
+    else
+    {
+        printf("%s %s \n","Возможно открыть файл ",curFileName);
+        fprintf(fp,"Расширенная матрица системы;\n");
+        for (i=0;i<NN;i++)
+        {
+            for (j=0;j<NN+1;j++)
+            {
+                fprintf(fp,outputFormat,Ais[i][j],";");
+            }
+            fprintf(fp,"%\n");
+        }
+    fprintf(fp,"Решение системы;\n");
+    for (i=0;i<NN;i++) fprintf(fp,outputFormat,X[i],";");
+    fprintf(fp,"%\n");
+    fprintf(fp,"Вектор невязки системы;\n");
+    for (i=0;i<NN;i++) fprintf(fp,outputFormat,Nev[i],";");
+    fprintf(fp,"%\n");
+    fprintf(fp,"Норма вектора невязки системы;\n");
+    fprintf(fp,outputFormat,Nv);
+    fprintf(fp,"%\n");
+    fprintf(fp,"Ток вдоль трубы Itx_i;\n");
+    for (i=0;i<M-1;i++) fprintf(fp,outputFormat,X[i],";");
+    fprintf(fp,"%\n");
+    fprintf(fp,"Ток на границе грунт-труба Itg_i;\n");
+    for (i=0;i<M;i++) fprintf(fp,outputFormat,X[M-1+i],";");
+    fprintf(fp,"%\n");
+    fprintf(fp,"Проверка: Суммарный ток на границе грунт-труба Itg_i;\n");
+    Nv = 0;
+    for (i=0;i<M;i++) Nv = Nv + X[M-1+i];
+    fprintf(fp,outputFormat,Nv);
+    fprintf(fp,"%\n");
+    fprintf(fp,"Эл. потенциал на границе грунт-туба Utg_i;\n");
+    for (i=0;i<M;i++) fprintf(fp,outputFormat,X[2*M-1+i],";");
+    fprintf(fp,"%\n");
+    fprintf(fp,"Эл. потенциал металла трубы Utm_i;\n");
+    for (i=0;i<M;i++) fprintf(fp,outputFormat,X[3*M-1+i],";");
+    fprintf(fp,"%\n");
+    fprintf(fp,"Защитный потенциал Utg_i-Utm_i;\n");
+    for (i=0;i<M;i++) fprintf(fp,outputFormat,X[2*M-1+i]-X[3*M-1+i],";");
+    fprintf(fp,"%\n");
+    fclose(fp);
+    }
+    char outputFormat1[28] = "%24.16f%s%24.16f%s";
+    strcpy(curFileName,"");
+    strcat(curFileName,dirName);
+    strcat(curFileName,fileName_Upr);
+    strcat(curFileName,fileType);
+    if((fp=fopen(curFileName, "w")) == NULL)
+    {
+        printf("%s %s \n","Невозможно открыть файл ",curFileName);
+    }
+    else
+    {
+        printf("%s %s \n","Возможно открыть файл ",curFileName);
+//        fprintf(fp,"Величина защитного потенциала;\n");
+        fprintf(fp,"Защитный потенциал Utg_i-Utm_i;\n");
+        for (i=0;i<M;i++) fprintf(fp,outputFormat1,FI_t[i][0],";",X[2*M-1+i]-X[3*M-1+i],";\n");
+        fprintf(fp,"%\n");
+        fclose(fp);
+    }
+
+    char outputFormat2[28] = "%24.16f%s%24.16f%s";
+    strcpy(curFileName,"");
+    strcat(curFileName,dirName);
+    strcat(curFileName,"Jtg");
+    strcat(curFileName,fileType);
+    if((fp=fopen(curFileName, "w")) == NULL)
+    {
+        printf("%s %s \n","Невозможно открыть файл ",curFileName);
+    }
+    else
+    {
+        printf("%s %s \n","Возможно открыть файл ",curFileName);
+        fprintf(fp,"Плотность тока на границе грунт-труба;\n");
+        fprintf(fp,"Ток на границе грунт-труба Itg_i;\n");
+        for (i=0;i<M;i++) fprintf(fp,outputFormat2,FI_t[i][0],";",1000*X[M-1+i]/St,";\n");
+        fprintf(fp,"%\n");
+        fclose(fp);
+    }
+}
+
+//////////// ГАУСС ////////////////////
+//////////// ГАУСС ////////////////////
+
+/// //////// Импорт данных  /////////////////
+
+void LoadDataSKZ()
+{
+    setlocale(LC_ALL, "rus");
+    ifstream fin("Data_SKZ.csv");
+    if (!fin.is_open())
+        cout << "File Data_SKZ.csv not found!\n";
+    else
+{
+    char buff[500],bf[100],*s[1];
+    int i,row,col,lenbuff;
+    row = 0;
+    col = 0;
+    Dskz = 0;
+    Dt = 0;
+    strcpy(bf,"");
+    *s = ";";
+    while (fin.getline(buff, 500))
+    {
+        strncat(buff,s[0],1);                       /// добавляем ";" в конец строки
+        cout<<"buff["<<col<<"] = ";
+        lenbuff = strlen(buff);                     /// длина строки
+        for (i=0;i<lenbuff;i++)
+        {
+            if (buff[i] != *s[0])                   /// если символ - не разделитель столбцов
+            {
+                cout<<buff[i];
+                strncat(bf,buff+i,1);               /// продолжаем собирать символи очередного числа
+            }
+            else                                    /// иначе
+            {
+                DataSKZ[row][col] = atof(bf);       /// преобразуем собранное число к типу double
+                                                    /// и заносим в массив
+                cout<<"="<<DataSKZ[row][col]<<"; ";
+                col++;                              /// переходим к следующему стлбцу
+                strcpy(bf,"");                      /// очищаем строку для сбора следующего числа
+            }
+        }
+        row++;
+        col = 0;
+        cout<<endl;
+    }
+   for (i=0;i<row;i++) if (DataSKZ[i][3] != 0) Dskz++;     /// считаем кол-во СКЗ
+   Dt = row;
+//    cout<<"Strok count   "<<Dt<<endl;
+//    cout<<"SKZ count   "<<Dskz<<endl;
+    fin.close();
+//* посмотрели содержимое массива
+    for (row=0;row<Dt;row++)
+    {
+        for (col=0;col<6;col++)
+    {
+        cout<<DataSKZ[row][col]<<"  ";
+    }
+    cout<<endl;
+    }
+//*/
+    }
+}
+
+/// //////// Импорт данных  /////////////////
+
+
+int main()
+{
+    LoadDataSKZ(); /// Загружает данные из файла DataKSZ.csv
+
+    /// использует константы
+    /// const int D1_0 = 100; max кол-во строк данных о точках замера
+    /// const int D2_0 = 6;   max кол-во столбцов данных одной точки замера
+
+    /// вносит данные в глобальные переменные
+    /// int Dt реальное кол-во строк даных о точках замера
+    /// int Dskz  реальное кол-во строк даных о СКЗ (кол-во анодов)
+    /// float DataSKZ[D1_0][D2_0] массив, содержащий исходную таблицу в числовом формате
+    /// столбцы:
+    ///  0 - абсолютная коор-та точк замера в км
+    ///  1 - измеренный Potential V
+    ///  2 - измеренная разность потенциалов - защитный потенциал
+    ///  3 - сила тока катодной станции
+    ///  4 - напряжение создаваемое СКЗ
+    ///  5 - сопотивление грунта растеканию тока
+
+    Init_FI_t(); /// Инициализирует данные по трубе
+    /// использует константы
+    /// M - принятое кол-во ФИ по трубе
+    /// Dt - кол-во точек замера в исходных данных
+
+    /// Ct Ом*м2 удельное сопротивление изоляции ПОКА КОНСТАНТА!!!
+
+    /// использует глобальные переменные
+    /// DataSKZ[][] массив с исходными данными (см. LoadDataSKZ())
+
+    /// вносит данные в глобальные переменные
+    /// L - общая длина рассматриваемого участка трубы
+    /// Li = L / M Длина участка трубы соотв-го одному ФИ
+    /// St = 2*pi*Rt*Li;  Площадь боковой поверхности, соответствующая одному ФИ
+    /// FI_t[i][1..3] координаты центра ФИ с номером i
+    /// FI_tg[i][1..3] координаты точки на грнанице ФИ с номером i
+    /// C_t[i]=Ct/St;  сопротивление изоляции учстка трубы, соот-го ФИ с номером i
+
+
+    Init_FI_a();
+    /// Инициализирует данные об анодах (катодных станциях)
+    /// вносит изменения в массивы и переменные
+    /// FI_a[i][0..2] - коор-ты анода номером k (i=1 кол-во ФИ по аноду!!!)
+    /// FI_a[i][3] - сила тока СКЗ с номером i
+    /// FI_a[i][4] содержит номер ФИ, к центру которого подключена i-я СКЗ
+/// ВВЕСТИ РАССТОЯНИЯ ДО ТРУБЫ И ГЛУБИНУ ДЛЯ КАЖДОГО АНОДА В ИСХОДНЫЕ ДАННЫЕ???
+
+    Init_A();   /// строит расширенную матрицу А для СЛАУ
+    mygauss(); /// решает СЛАУ, заданную расширенной матрицей А
+
+    printResult();
+
+    i_main(); /// Интервальные вычисления
+
+    return 0;
+}
+
+/*
+double res1 = x/2; //т. к. оба операнда в выражении целого типа,
+компилятор генерирует низкоуровневую команду
+целочисленного деления idiv, в результате выполнения
+которой дробная часть просто нигде не сохраняется,
+а потом целый результат выражения (0) приводится к
+типу double, поэтому res1=0
+double res2 = static_cast<double>(x)/2; //тип переменной x явно
+приводится к типу double. Так как в выражении
+появился операнд старшего плавающего типа, второй
+операнд будет приведен к тому же типу компилятором
+неявно и деление будет сгенерировано плавающее –
+fdiv, поэтому res2=0.5
+
+extern int iNumber; //это только описание свойств (объявление)
+внешней переменной iNumber, определенной
+в другом модуле. Компилятор никакой памяти
+не резервирует
+
+
+int iX1, iX2=1, iX3;
+
+1.локальная область видимости. Переменные, определенные внутри любого
+блока (в частности таким блоком может быть тело функции), называются
+локальными. Область видимости локальной переменной простирается от
+места определения до конца блока, содержащего определение
+
+2.область видимости — файл (File Scope). Любое имя, объявленное вне фи-
+гурных скобок, обладает областью видимости файла. Компилятор позво-
+лит использовать такое имя (оно видно компилятору) в любом месте дан-
+ного файла после объявления и до конца файла без каких-либо
+дополнительных ухищрений.
+ЗАМЕ ЧАНИЕ
+Имена, объявленные таким образом без ключевого слова static, часто назы-
+вают глобальными. К таким именам можно обращаться из других файлов. Они
+подвержены внешней компоновке;
+
+
+Использование пространств имен для ограничения области
+видимости глобальных переменных
+namespace One{ int version = 1;}
+namespace Second{ int version = 2;}
+int main()
+{
+int n1 = One::version; //n1=1
+int n2 = Second::version; //n2=2
+}
+
+для предотвращения дублирования таких имен согласно стандарту все сервисы стан-
+дартной библиотеки заключены в пространстве имен с именем std.
+
+__TIME__  Преобразуется в строку, заключенную в кавычки и содержа-
+щую время последней компиляции
+
+__DATE__  Преобразуется в строку, заключенную в кавычки и содержа-
+щую дату компиляции
+*/
+
+/*MyFloat R_1_ii(MyFloat P_i[3],MyFloat P_j[3]) // можно вычислить один раз и вызывать как переменную!!!
+{
+    return 2*log((sqrt(Rt*Rt+Li*Li)+Li)/Rt)/Li;
+}
+
+MyFloat R(MyFloat P_i[3],MyFloat P_j[3])
+{
+    return sqrt((P_i[0]-P_j[0])*(P_i[0]-P_j[0])+(P_i[1]-P_j[1])*
+                (P_i[1]-P_j[1])+(P_i[2]-P_j[2])*(P_i[2]-P_j[2]));
+}
+
+MyFloat R_z(MyFloat P_i[3],MyFloat P_j[3])
+{
+    return sqrt((P_i[0]-P_j[0])*(P_i[0]-P_j[0])+(P_i[1]-P_j[1])*
+                (P_i[1]-P_j[1])+(P_i[2]+P_j[2])*(P_i[2]+P_j[2]));
+}
+MyFloat R_x0(MyFloat P_i[3],MyFloat P_j[3])
+{
+    return sqrt((P_i[0]+P_j[0])*(P_i[0]+P_j[0])+(P_i[1]-P_j[1])*
+                (P_i[1]-P_j[1])+(P_i[2]-P_j[2])*(P_i[2]-P_j[2]));
+}
+MyFloat R_xM(MyFloat P_i[3],MyFloat P_j[3])
+{
+    return sqrt((P_i[0]-(2*L-P_j[0]))*(P_i[0]-(2*L-P_j[0]))+(P_i[1]-P_j[1])*
+                (P_i[1]-P_j[1])+(P_i[2]-P_j[2])*(P_i[2]-P_j[2]));
+}
+
+*/
